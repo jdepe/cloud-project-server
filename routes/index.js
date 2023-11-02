@@ -3,9 +3,6 @@ var router = express.Router();
 const AWS = require('aws-sdk');
 
 AWS.config.update({
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    sessionToken: process.env.AWS_SESSION_TOKEN,
     region: "ap-southeast-2",
 });
 
@@ -14,9 +11,7 @@ const bucketName = 'n11069449-compress-store';
 const s3 = new AWS.S3({ apiVersion: "2006-03-01" });
 
 // Initialise sqs variables
-const sqs = new AWS.SQS({ region: 'ap-southeast-2'});
-
-console.log("Access Key:", process.env.AWS_ACCESS_KEY_ID);
+const sqs = new AWS.SQS();
 
 router.get('/upload',(req, res) => {
   const fileName = req.query.fileName;
@@ -52,18 +47,34 @@ router.get('/upload',(req, res) => {
 });
 
 router.post('/enqueue', async (req, res) => {
-  const params = {
-    MessageBody: JSON.stringify({ 
-      fileKeys: req.body.fileKeys,
-      folderKey: req.body.folderKey
-     }),
-    QueueUrl: 'your-sqs-queue-url'
-  };
+  const queueName = 'n11069449-sqs-queue';
 
-  sqs.sendMessage(params, (err, data) => {
-    if (err) res.status(500).send(err);
-    else res.status(200).send(data);
-  });
+  // Create the queue and wait for the queue to be created.
+  try {
+    const createQueueData = await sqs.createQueue({
+      QueueName: queueName,
+      Attributes: {
+        DelaySeconds: '60',
+        MessageRetentionPeriod: '86400'
+      }
+    }).promise();
+
+    const queueUrl = createQueueData.QueueUrl;
+
+    const sendMessageData = await sqs.sendMessage({
+      MessageBody: JSON.stringify({ 
+        fileKeys: req.body.fileKeys,
+        folderKey: req.body.folderKey
+      }),
+      QueueUrl: queueUrl
+    }).promise();
+
+    res.status(200).send(sendMessageData);
+  } catch (err) {
+    console.log('Error', err);
+    res.status(500).send(err);
+  }
 });
+
 
 module.exports = router;
