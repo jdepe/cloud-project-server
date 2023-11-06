@@ -92,5 +92,33 @@
     }
   });
 
+  router.get('check-status', async (req, res) => {
+    const {uniqueId, folderKey} = req.query;
+
+    // Define S3 key for compressed file
+    const compressedFileKey = `${uniqueId}/${folderKey}.tar.gz`;
+
+    // Check if the compressed file exists in S3
+    const params = {
+      Bucket: bucketName,
+      Key: compressedFileKey,
+    };
+
+    try {
+      await s3.headObject(params).promise();
+      // If the file exists, send a success response
+      res.json({ status: 'completed', url: `https://${params.Bucket}.s3.amazonaws.com/${compressedFileKey}` });
+    } catch (error) {
+      if (error.statusCode === 404) {
+        // if file doesnt exist, assume its processing still
+        res.status(202);
+        res.json({status: 'status: incomplete' });
+      } else {
+        res.status(500);
+        res.json({ status: 'error', message: error.message });
+      }
+    }
+  })
+
 
   module.exports = router;
