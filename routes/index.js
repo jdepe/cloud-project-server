@@ -92,8 +92,15 @@
     }
   });
 
-  router.get('check-status', async (req, res) => {
+  router.get('/check-status', async (req, res) => {
     const {uniqueId, folderKey} = req.query;
+
+    res.set({
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+      'Surrogate-Control': 'no-store'
+    });
 
     // Define S3 key for compressed file
     const compressedFileKey = `${uniqueId}/${folderKey}.tar.gz`;
@@ -107,18 +114,36 @@
     try {
       await s3.headObject(params).promise();
       // If the file exists, send a success response
-      res.json({ status: 'completed', url: `https://${params.Bucket}.s3.amazonaws.com/${compressedFileKey}` });
+      const downloadUrl = await getPresignedDownloadUrl(bucketName, compressedFileKey);
+      res.json({ status: 'completed', url: downloadUrl });
     } catch (error) {
-      if (error.statusCode === 404) {
+      if (error.code === 'NotFound') {
         // if file doesnt exist, assume its processing still
         res.status(202);
-        res.json({status: 'status: incomplete' });
+        res.json({status: 'incomplete' });
       } else {
         res.status(500);
         res.json({ status: 'error', message: error.message });
       }
     }
-  })
+  });
 
+  async function getPresignedDownloadUrl(bucketName, objectKey) {
+    const params = {
+      Bucket: bucketName,
+      Key: objectKey,
+      Expires: 60 * 60 // Expires in 1 hour
+    };
+
+    return new Promise((resolve, reject) => {
+      s3.getSignedUrl('getObject', params, (err, url) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(url);
+        }
+      });
+    });
+  }
 
   module.exports = router;
